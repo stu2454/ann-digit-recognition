@@ -223,6 +223,10 @@ button.secondary:hover {
   min-height: 2rem;
   letter-spacing: 0.02em;
 }
+.result-label.result-uncertain {
+  color: #e3b341;  /* amber — "I'm not sure" */
+  font-size: 1.1rem;
+}
 
 /* ---- Viz panel ---- */
 .viz-panel {
@@ -339,6 +343,17 @@ button.secondary:hover {
 .fb-correct:hover  { border-color: var(--success); color: var(--success); }
 .fb-wrong:hover    { border-color: #f85149; color: #f85149; }
 .fb-notdigit:hover { border-color: var(--text-muted); color: var(--text-primary); }
+
+/* Prominent "not a digit" when the model is already uncertain */
+.fb-notdigit-default {
+  border-color: #e3b341;
+  color: #e3b341;
+}
+.fb-notdigit-default:hover {
+  background: rgba(227, 179, 65, 0.15);
+  border-color: #e3b341;
+  color: #e3b341;
+}
 
 .feedback-picker {
   display: flex;

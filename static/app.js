@@ -390,6 +390,7 @@ function startAnimation(apiResult) {
   VIZ.activations = apiResult.activations;
   VIZ.probabilities = apiResult.probabilities;
   VIZ.prediction = apiResult.prediction;
+  VIZ.confidenceLevel = apiResult._confidenceLevel || 'confident';
 
   resetNodes();
   if (VIZ.animId) cancelAnimationFrame(VIZ.animId);
@@ -520,7 +521,7 @@ function animLoop(ts) {
         setPhase('done', ts);
         buildProbBars(VIZ.probabilities, VIZ.prediction);
         showProbBars();
-        showFeedbackPrompt(VIZ.prediction);
+        showFeedbackPrompt(VIZ.prediction, VIZ.confidenceLevel);
       }
       break;
     }
@@ -578,16 +579,29 @@ function showProbBars() {
 // 5b. FEEDBACK UI
 // =============================================================
 
-function showFeedbackPrompt(prediction) {
+function showFeedbackPrompt(prediction, confidenceLevel) {
   const el = document.getElementById('feedback-area');
-  el.innerHTML = `
-    <div class="feedback-prompt">
-      Was that right?
-      <button class="fb-btn fb-correct" onclick="handleFeedbackCorrect()">✓ Yes</button>
-      <button class="fb-btn fb-wrong" onclick="showDigitPicker(${prediction})">✗ No</button>
-      <button class="fb-btn fb-notdigit" onclick="handleNotADigit()">∅ Not a digit</button>
-    </div>
-  `;
+
+  // When the network is very uncertain, lead with "Not a digit" and make
+  // it visually prominent — the model is effectively saying "I don't know."
+  if (confidenceLevel === 'not_digit') {
+    el.innerHTML = `
+      <div class="feedback-prompt">
+        Doesn't look like a digit to me — was I wrong?
+        <button class="fb-btn fb-notdigit fb-notdigit-default" onclick="handleNotADigit()">∅ Correct, not a digit</button>
+        <button class="fb-btn fb-correct" onclick="showDigitPicker(${prediction})">It was a digit…</button>
+      </div>
+    `;
+  } else {
+    el.innerHTML = `
+      <div class="feedback-prompt">
+        Was that right?
+        <button class="fb-btn fb-correct" onclick="handleFeedbackCorrect()">✓ Yes</button>
+        <button class="fb-btn fb-wrong" onclick="showDigitPicker(${prediction})">✗ No</button>
+        <button class="fb-btn fb-notdigit" onclick="handleNotADigit()">∅ Not a digit</button>
+      </div>
+    `;
+  }
   el.classList.remove('hidden');
 }
 
@@ -639,6 +653,40 @@ async function handleFeedbackCorrection(correctLabel) {
   }
 
   setTimeout(() => el.classList.add('hidden'), 2500);
+}
+
+// =============================================================
+// 5c. UNCERTAINTY HELPERS
+// =============================================================
+
+/**
+ * Shannon entropy of a probability distribution, normalised to [0, 1].
+ * Max entropy for 10 classes = log2(10) ≈ 3.32 bits.
+ * A uniform distribution (total uncertainty) gives 1.0.
+ * A peaked distribution (confident) gives ~0.
+ */
+function normalisedEntropy(probs) {
+  const maxH = Math.log2(probs.length);
+  let H = 0;
+  for (const p of probs) {
+    if (p > 1e-9) H -= p * Math.log2(p);
+  }
+  return H / maxH;
+}
+
+// Thresholds (tuned empirically for this 784→32→16→10 network):
+// entropy > 0.6  →  "probably not a digit"
+// entropy 0.4–0.6 →  "uncertain"
+// entropy < 0.4  →  confident prediction
+const ENTROPY_NOT_DIGIT = 0.6;
+const ENTROPY_UNCERTAIN = 0.4;
+
+function confidenceLabel(probs) {
+  const conf = Math.max(...probs);
+  const ent  = normalisedEntropy(probs);
+  if (ent > ENTROPY_NOT_DIGIT) return { level: 'not_digit', conf };
+  if (ent > ENTROPY_UNCERTAIN) return { level: 'uncertain',  conf };
+  return                               { level: 'confident', conf };
 }
 
 // =============================================================
@@ -714,7 +762,22 @@ async function handleRecognise() {
       return;
     }
 
-    document.getElementById('result-label').textContent = `Prediction: ${data.prediction}`;
+    const { level, conf } = confidenceLabel(data.probabilities);
+    const pct = (conf * 100).toFixed(0);
+    const resultEl = document.getElementById('result-label');
+
+    if (level === 'not_digit') {
+      resultEl.textContent = `Looks like a ${data.prediction}? (${pct}% — very uncertain)`;
+      resultEl.className = 'result-label result-uncertain';
+    } else if (level === 'uncertain') {
+      resultEl.textContent = `Prediction: ${data.prediction} (${pct}% — uncertain)`;
+      resultEl.className = 'result-label result-uncertain';
+    } else {
+      resultEl.textContent = `Prediction: ${data.prediction} (${pct}%)`;
+      resultEl.className = 'result-label';
+    }
+
+    data._confidenceLevel = level;
     startAnimation(data);
 
   } catch (err) {
