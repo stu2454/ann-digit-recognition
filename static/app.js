@@ -674,19 +674,41 @@ function normalisedEntropy(probs) {
   return H / maxH;
 }
 
-// Thresholds (tuned empirically for this 784→32→16→10 network):
-// entropy > 0.6  →  "probably not a digit"
-// entropy 0.4–0.6 →  "uncertain"
-// entropy < 0.4  →  confident prediction
-const ENTROPY_NOT_DIGIT = 0.6;
-const ENTROPY_UNCERTAIN = 0.4;
+// ---- Pixel density -------------------------------------------------------
+// Real MNIST digits occupy roughly 8–25% of the 28×28 grid.
+// A thick random scribble typically fills 30–60%+.
+// This is a much more reliable signal than softmax entropy for this network,
+// because softmax saturates and becomes overconfident on out-of-distribution
+// dense inputs (entropy ≈ 0 even for pure noise).
 
-function confidenceLabel(probs) {
-  const conf = Math.max(...probs);
-  const ent  = normalisedEntropy(probs);
-  if (ent > ENTROPY_NOT_DIGIT) return { level: 'not_digit', conf };
-  if (ent > ENTROPY_UNCERTAIN) return { level: 'uncertain',  conf };
-  return                               { level: 'confident', conf };
+const DENSITY_HIGH  = 0.32;  // > 32% lit → probably a scribble
+const DENSITY_LOW   = 0.03;  // < 3%  lit → barely anything drawn
+
+function pixelDensity(pixels) {
+  let lit = 0;
+  for (const p of pixels) if (p > 0.15) lit++;
+  return lit / pixels.length;
+}
+
+// ---- Entropy thresholds --------------------------------------------------
+// Only meaningful once density is in the "could be a digit" range.
+// Lowered substantially because this small network is overconfident.
+const ENTROPY_NOT_DIGIT = 0.35;
+const ENTROPY_UNCERTAIN  = 0.20;
+
+function confidenceLabel(probs, pixels) {
+  const density = pixelDensity(pixels);
+  const conf    = Math.max(...probs);
+  const ent     = normalisedEntropy(probs);
+
+  // Primary check: too much or too little ink
+  if (density > DENSITY_HIGH) return { level: 'not_digit', conf, density };
+  if (density < DENSITY_LOW)  return { level: 'not_digit', conf, density };
+
+  // Secondary check: entropy (spread output distribution)
+  if (ent > ENTROPY_NOT_DIGIT) return { level: 'not_digit', conf, density };
+  if (ent > ENTROPY_UNCERTAIN)  return { level: 'uncertain',  conf, density };
+  return                                { level: 'confident', conf, density };
 }
 
 // =============================================================
@@ -762,7 +784,7 @@ async function handleRecognise() {
       return;
     }
 
-    const { level, conf } = confidenceLabel(data.probabilities);
+    const { level, conf } = confidenceLabel(data.probabilities, state.pixels);
     const pct = (conf * 100).toFixed(0);
     const resultEl = document.getElementById('result-label');
 
