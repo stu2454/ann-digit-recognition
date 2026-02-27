@@ -336,8 +336,9 @@ button.secondary:hover {
   transition: background 0.15s, border-color 0.15s;
   flex: unset;
 }
-.fb-correct:hover { border-color: var(--success); color: var(--success); }
-.fb-wrong:hover   { border-color: #f85149; color: #f85149; }
+.fb-correct:hover  { border-color: var(--success); color: var(--success); }
+.fb-wrong:hover    { border-color: #f85149; color: #f85149; }
+.fb-notdigit:hover { border-color: var(--text-muted); color: var(--text-primary); }
 
 .feedback-picker {
   display: flex;
@@ -391,4 +392,7 @@ button.secondary:hover {
 }
 .feedback-error {
   color: #f85149;
+}
+.feedback-neutral {
+  color: var(--text-muted);
 }

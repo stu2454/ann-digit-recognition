@@ -585,9 +585,16 @@ function showFeedbackPrompt(prediction) {
       Was that right?
       <button class="fb-btn fb-correct" onclick="handleFeedbackCorrect()">✓ Yes</button>
       <button class="fb-btn fb-wrong" onclick="showDigitPicker(${prediction})">✗ No</button>
+      <button class="fb-btn fb-notdigit" onclick="handleNotADigit()">∅ Not a digit</button>
     </div>
   `;
   el.classList.remove('hidden');
+}
+
+function handleNotADigit() {
+  const el = document.getElementById('feedback-area');
+  el.innerHTML = '<div class="feedback-thanks feedback-neutral">OK — skipping, no training update.</div>';
+  setTimeout(() => el.classList.add('hidden'), 2000);
 }
 
 function showDigitPicker(wrongPrediction) {
