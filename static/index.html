@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ANN Digit Recognition</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+  <!-- Loading overlay — visible until model is trained -->
+  <div id="loading-overlay">
+    <div class="loading-card">
+      <div class="spinner"></div>
+      <h2>Training Neural Network</h2>
+      <p id="status-message">Connecting to server…</p>
+      <p class="sub-note">784 → 32 → 16 → 10 · MNIST · 60,000 examples</p>
+    </div>
+  </div>
+
+  <!-- ------------------------------------------------------------------ -->
+  <!-- Header                                                               -->
+  <!-- ------------------------------------------------------------------ -->
+  <header>
+    <div class="header-inner">
+      <div>
+        <h1>ANN Digit Recognition</h1>
+        <p class="tagline">Hand-coded neural network · draw a digit and watch the activations propagate</p>
+      </div>
+      <span id="accuracy-badge" class="accuracy-badge hidden"></span>
+    </div>
+  </header>
+
+  <!-- ------------------------------------------------------------------ -->
+  <!-- Main layout                                                          -->
+  <!-- ------------------------------------------------------------------ -->
+  <main>
+
+    <!-- Left panel: draw -->
+    <section class="draw-panel">
+      <h2>Draw a digit</h2>
+      <div class="canvas-wrapper">
+        <canvas id="draw-canvas" width="280" height="280"
+                aria-label="Drawing canvas — draw a digit here"></canvas>
+      </div>
+      <div class="controls">
+        <button id="recognize-btn" disabled>Recognise</button>
+        <button id="clear-btn" class="secondary">Clear</button>
+      </div>
+      <div id="result-label" class="result-label" aria-live="polite"></div>
+      <div id="feedback-area" class="hidden" aria-live="polite"></div>
+    </section>
+
+    <!-- Right panel: network visualisation -->
+    <section class="viz-panel">
+      <h2>Network</h2>
+      <canvas id="viz-canvas" aria-label="Neural network activation visualisation"></canvas>
+
+      <!-- Probability bars (shown after first prediction) -->
+      <div id="prob-bars" class="prob-bars hidden" aria-label="Class probabilities">
+        <div class="prob-bars-title">Class probabilities</div>
+        <div id="prob-bars-list"></div>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

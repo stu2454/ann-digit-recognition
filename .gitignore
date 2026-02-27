@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+scikit_learn_data/
+*.mov
