@@ -23,6 +23,7 @@ from network import MLP
 app_state: dict = {
     "trained": False,
     "training": False,
+    "downloading": False,
     "accuracy": 0.0,
     "epoch": 0,
     "total_epochs": 20,
@@ -62,12 +63,16 @@ def _load_mnist() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     import ssl
     import urllib.request
 
-    # Disable certificate verification for macOS dev environments.
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
 
-    BASE = "https://storage.googleapis.com/cvdf-datasets/mnist/"
+    # PyTorch S3 mirror — AWS-hosted, reliable from Render which also runs on AWS.
+    # Falls back to Google Cloud Storage if S3 times out.
+    MIRRORS = [
+        "https://ossci-datasets.s3.amazonaws.com/mnist/",
+        "https://storage.googleapis.com/cvdf-datasets/mnist/",
+    ]
     FILES = {
         "train_img": "train-images-idx3-ubyte.gz",
         "train_lbl": "train-labels-idx1-ubyte.gz",
@@ -76,10 +81,16 @@ def _load_mnist() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     }
 
     def fetch(name: str) -> bytes:
-        url = BASE + FILES[name]
-        print(f"[training] Downloading {FILES[name]}…")
-        with urllib.request.urlopen(url, context=ctx) as r:
-            return gzip.decompress(r.read())
+        filename = FILES[name]
+        for base in MIRRORS:
+            url = base + filename
+            print(f"[training] Downloading {filename} from {base}…")
+            try:
+                with urllib.request.urlopen(url, context=ctx, timeout=90) as r:
+                    return gzip.decompress(r.read())
+            except Exception as e:
+                print(f"[training] Mirror failed ({e}), trying next…")
+        raise RuntimeError(f"All mirrors failed for {filename}")
 
     raw_train_img = fetch("train_img")
     X_train = np.frombuffer(raw_train_img[16:], dtype=np.uint8).reshape(-1, 784).astype(np.float32) / 255.0
@@ -104,9 +115,11 @@ def _train_model() -> None:
     import gc
     global model
     app_state["training"] = True
+    app_state["downloading"] = True
 
     try:
         X_train, y_train, X_test, y_test = _load_mnist()
+        app_state["downloading"] = False
 
         print("[training] Starting training: 784→32→16→10, 20 epochs...")
         model = MLP(layer_sizes=[784, 32, 16, 10], lr=0.1)
@@ -168,6 +181,7 @@ async def status():
     return {
         "trained": app_state["trained"],
         "training": app_state["training"],
+        "downloading": app_state["downloading"],
         "accuracy": app_state["accuracy"],
         "epoch": app_state["epoch"],
         "total_epochs": app_state["total_epochs"],

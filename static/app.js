@@ -742,10 +742,12 @@ async function pollStatus() {
     if (data.total_epochs > 0 && data.epoch > 0) {
       const pct = Math.round((data.epoch / data.total_epochs) * 100);
       msg.textContent = `Training… epoch ${data.epoch}/${data.total_epochs} (${pct}%)  acc=${(data.accuracy * 100).toFixed(1)}%`;
+    } else if (data.downloading) {
+      msg.textContent = 'Downloading MNIST dataset…';
+    } else if (data.training) {
+      msg.textContent = 'Preparing training data…';
     } else {
-      msg.textContent = data.training
-        ? 'Loading MNIST dataset…'
-        : 'Connecting to server…';
+      msg.textContent = 'Connecting to server…';
     }
 
     setTimeout(pollStatus, 2000);
