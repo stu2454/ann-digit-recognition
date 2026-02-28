@@ -44,29 +44,69 @@ _replay_buffer: collections.deque = collections.deque(maxlen=64)  # (x, y) pairs
 # Training (runs in a daemon thread)
 # ---------------------------------------------------------------------------
 
+def _load_mnist() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Download raw MNIST IDX binary files directly.
+
+    Why not fetch_openml / liac-arff?
+    The ARFF parser materialises every pixel value as a Python float object
+    (~56 bytes overhead each) before converting to numpy.  For 70k × 784
+    values that is ~3 GB of intermediate Python objects — guaranteed OOM
+    on Render's free 512 MB tier.
+
+    The raw IDX binary files are parsed straight into numpy uint8 arrays
+    with no Python-object overhead.  Peak memory during load is ~275 MB,
+    well within the 512 MB limit.
+    """
+    import gzip
+    import ssl
+    import urllib.request
+
+    # Disable certificate verification for macOS dev environments.
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    BASE = "https://storage.googleapis.com/cvdf-datasets/mnist/"
+    FILES = {
+        "train_img": "train-images-idx3-ubyte.gz",
+        "train_lbl": "train-labels-idx1-ubyte.gz",
+        "test_img":  "t10k-images-idx3-ubyte.gz",
+        "test_lbl":  "t10k-labels-idx1-ubyte.gz",
+    }
+
+    def fetch(name: str) -> bytes:
+        url = BASE + FILES[name]
+        print(f"[training] Downloading {FILES[name]}…")
+        with urllib.request.urlopen(url, context=ctx) as r:
+            return gzip.decompress(r.read())
+
+    raw_train_img = fetch("train_img")
+    X_train = np.frombuffer(raw_train_img[16:], dtype=np.uint8).reshape(-1, 784).astype(np.float32) / 255.0
+    del raw_train_img
+
+    raw_train_lbl = fetch("train_lbl")
+    y_train = np.frombuffer(raw_train_lbl[8:], dtype=np.uint8).astype(np.int32)
+    del raw_train_lbl
+
+    raw_test_img = fetch("test_img")
+    X_test = np.frombuffer(raw_test_img[16:], dtype=np.uint8).reshape(-1, 784).astype(np.float32) / 255.0
+    del raw_test_img
+
+    raw_test_lbl = fetch("test_lbl")
+    y_test = np.frombuffer(raw_test_lbl[8:], dtype=np.uint8).astype(np.int32)
+    del raw_test_lbl
+
+    return X_train, y_train, X_test, y_test
+
+
 def _train_model() -> None:
+    import gc
     global model
     app_state["training"] = True
 
     try:
-        import ssl
-        import sklearn.datasets as _skds
-        from sklearn.datasets import fetch_openml
-
-        # macOS ships without the required CA bundle for Python's urllib.
-        # This unverified context is fine for fetching a public dataset.
-        ssl._create_default_https_context = ssl._create_unverified_context
-
-        print("[training] Fetching MNIST (this may take a moment on first run)...")
-        mnist = fetch_openml("mnist_784", version=1, as_frame=False, parser="liac-arff")
-
-        # Float32 to stay within Render free-tier 512MB RAM
-        X = mnist.data.astype(np.float32) / 255.0
-        # fetch_openml returns labels as strings in recent sklearn versions
-        y = mnist.target.astype(np.int32)
-
-        X_train, X_test = X[:60000], X[60000:]
-        y_train, y_test = y[:60000], y[60000:]
+        X_train, y_train, X_test, y_test = _load_mnist()
 
         print("[training] Starting training: 784→32→16→10, 20 epochs...")
         model = MLP(layer_sizes=[784, 32, 16, 10], lr=0.1)
@@ -83,6 +123,11 @@ def _train_model() -> None:
         app_state["accuracy"] = round(test_acc, 4)
         app_state["trained"] = True
         print(f"[training] Done. Test accuracy: {test_acc:.4f}")
+
+        # Free training data — model weights are ~100 KB; X_train is ~220 MB.
+        del X_train, y_train, X_test, y_test
+        gc.collect()
+        print("[training] Training data freed from memory.")
 
     except Exception as exc:
         app_state["error"] = str(exc)
