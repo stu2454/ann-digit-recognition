@@ -92,21 +92,33 @@ def _load_mnist() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
                 print(f"[training] Mirror failed ({e}), trying next…")
         raise RuntimeError(f"All mirrors failed for {filename}")
 
-    raw_train_img = fetch("train_img")
-    X_train = np.frombuffer(raw_train_img[16:], dtype=np.uint8).reshape(-1, 784).astype(np.float32) / 255.0
-    del raw_train_img
+    # memoryview slicing is zero-copy (unlike bytes[n:] which makes a 47 MB copy).
+    # Pre-allocating float32 and filling in-place avoids a second 188 MB
+    # intermediate array that .astype() + / 255.0 would otherwise create.
+    # Peak memory this way: 47 MB (raw bytes) + 188 MB (X_train) = ~235 MB,
+    # vs ~470 MB with the naive approach.
 
-    raw_train_lbl = fetch("train_lbl")
-    y_train = np.frombuffer(raw_train_lbl[8:], dtype=np.uint8).astype(np.int32)
-    del raw_train_lbl
+    raw = fetch("train_img")                                    # 47 MB bytes
+    mv = memoryview(raw)                                        # zero-copy view
+    X_train = np.empty((60000, 784), dtype=np.float32)         # 188 MB, pre-alloc
+    X_train[:] = np.frombuffer(mv[16:], dtype=np.uint8).reshape(60000, 784)
+    X_train /= 255.0                                            # in-place, no copy
+    del raw, mv                                                 # free 47 MB
 
-    raw_test_img = fetch("test_img")
-    X_test = np.frombuffer(raw_test_img[16:], dtype=np.uint8).reshape(-1, 784).astype(np.float32) / 255.0
-    del raw_test_img
+    raw = fetch("train_lbl")
+    y_train = np.frombuffer(memoryview(raw)[8:], dtype=np.uint8).astype(np.int32)
+    del raw
 
-    raw_test_lbl = fetch("test_lbl")
-    y_test = np.frombuffer(raw_test_lbl[8:], dtype=np.uint8).astype(np.int32)
-    del raw_test_lbl
+    raw = fetch("test_img")                                     # 8 MB bytes
+    mv = memoryview(raw)
+    X_test = np.empty((10000, 784), dtype=np.float32)          # 31 MB, pre-alloc
+    X_test[:] = np.frombuffer(mv[16:], dtype=np.uint8).reshape(10000, 784)
+    X_test /= 255.0
+    del raw, mv
+
+    raw = fetch("test_lbl")
+    y_test = np.frombuffer(memoryview(raw)[8:], dtype=np.uint8).astype(np.int32)
+    del raw
 
     return X_train, y_train, X_test, y_test
 
