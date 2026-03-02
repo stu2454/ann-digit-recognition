@@ -125,15 +125,19 @@ class MLP:
         n = len(X_train)
         accuracy_history: list[float] = []
         rng = np.random.default_rng(0)
+        is_uint8 = X_train.dtype == np.uint8
 
         for epoch in range(epochs):
             idx = rng.permutation(n)
-            X_shuf = X_train[idx]
-            y_shuf = y_train[idx]
 
             for start in range(0, n, batch_size):
-                Xb = X_shuf[start : start + batch_size]
-                yb = y_shuf[start : start + batch_size]
+                batch_idx = idx[start : start + batch_size]
+                Xb = X_train[batch_idx]
+                yb = y_train[batch_idx]
+                
+                if is_uint8:
+                    Xb = Xb.astype(np.float32) / 255.0
+                    
                 y_onehot = np.eye(10, dtype=np.float32)[yb]
 
                 activations, _ = self.forward(Xb)
@@ -181,6 +185,8 @@ class MLP:
     # ------------------------------------------------------------------
 
     def accuracy(self, X: np.ndarray, y: np.ndarray) -> float:
+        if X.dtype == np.uint8:
+            X = X.astype(np.float32) / 255.0
         activations, _ = self.forward(X)
         preds = np.argmax(activations[-1], axis=1)
         return float(np.mean(preds == y))
