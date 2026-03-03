@@ -192,6 +192,30 @@ class MLP:
         return float(np.mean(preds == y))
 
     # ------------------------------------------------------------------
+    # Persistence
+    # ------------------------------------------------------------------
+
+    def save(self, path: str, **extra_arrays) -> None:
+        """Save weights, architecture, and any extra arrays to a .npz file."""
+        arrays = {"layer_sizes": np.array(self.layer_sizes)}
+        for i, (W, b) in enumerate(zip(self.weights, self.biases)):
+            arrays[f"W{i}"] = W
+            arrays[f"b{i}"] = b
+        arrays.update(extra_arrays)
+        np.savez(path, **arrays)
+
+    @classmethod
+    def load(cls, path: str) -> "MLP":
+        """Load a model saved by save()."""
+        d = np.load(path)
+        layer_sizes = d["layer_sizes"].tolist()
+        mlp = cls(layer_sizes)
+        for i in range(len(mlp.weights)):
+            mlp.weights[i] = d[f"W{i}"]
+            mlp.biases[i] = d[f"b{i}"]
+        return mlp
+
+    # ------------------------------------------------------------------
     # Inference (used by API)
     # ------------------------------------------------------------------
 

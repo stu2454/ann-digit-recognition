@@ -3,6 +3,7 @@ FastAPI application.
 Trains the MLP on MNIST in a background thread at startup.
 The frontend polls /status until training is complete.
 """
+import os
 import threading
 from contextlib import asynccontextmanager
 
@@ -14,6 +15,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from network import MLP
+
+WEIGHTS_PATH = "weights.npz"
 
 # ---------------------------------------------------------------------------
 # Global state
@@ -119,6 +122,23 @@ def _load_mnist() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
 def _train_model() -> None:
     import gc
     global model
+
+    # Fast path: load pre-trained weights bundled with the app.
+    # Cold start goes from ~5 min training to ~instant.
+    if os.path.exists(WEIGHTS_PATH):
+        print(f"[startup] Loading pre-trained weights from {WEIGHTS_PATH}…")
+        try:
+            model = MLP.load(WEIGHTS_PATH)
+            d = np.load(WEIGHTS_PATH)
+            if "accuracy" in d:
+                app_state["accuracy"] = round(float(d["accuracy"]), 4)
+            app_state["trained"] = True
+            print(f"[startup] Ready. Test accuracy: {app_state['accuracy']:.4f}")
+            return
+        except Exception as exc:
+            print(f"[startup] Could not load weights ({exc}), falling back to training…")
+
+    # Slow path: download MNIST and train from scratch, then save for next time.
     app_state["training"] = True
     app_state["downloading"] = True
 
@@ -142,16 +162,19 @@ def _train_model() -> None:
         app_state["trained"] = True
         print(f"[training] Done. Test accuracy: {test_acc:.4f}")
 
-        # Free training data — model weights are ~100 KB; X_train is ~220 MB.
+        # Save weights so future cold starts are instant.
+        model.save(WEIGHTS_PATH, accuracy=np.float32(test_acc))
+        print(f"[training] Weights saved to {WEIGHTS_PATH}.")
+
         del X_train, y_train, X_test, y_test
         gc.collect()
-        print("[training] Training data freed from memory.")
 
     except Exception as exc:
         app_state["error"] = str(exc)
         print(f"[training] Failed: {exc}")
     finally:
         app_state["training"] = False
+        app_state["downloading"] = False
 
 
 # ---------------------------------------------------------------------------
